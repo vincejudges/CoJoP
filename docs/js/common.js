@@ -22,6 +22,17 @@ function remove_all_spaces( s )
     return s.replace( /[^\S\r\n]+/g, '' );
 }
 
+function random_Gaussian( mu, sigma )
+{
+    // Box–Muller transform
+    // https://stackoverflow.com/questions/25582882/javascript-math-random-normal-distribution-gaussian-bell-curve
+    const u1 = 1 - Math.random();
+    const u2 = Math.random();
+    const z = Math.sqrt( - 2 * Math.log( u1 ) ) * Math.cos( 2 * Math.PI * u2 );
+    const result = z * sigma + mu;
+    return result;
+}
+
 function get_random_2d_points( number_of_points, x_range, y_range )
 {
     const points = [];

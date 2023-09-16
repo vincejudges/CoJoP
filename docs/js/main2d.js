@@ -29,13 +29,14 @@ const colors =
 const species_group = new THREE.Group();
 const species_profile =
 {
+    species_position: [],
     species_instance: [],
 };
 
 const sprite = new THREE.TextureLoader().load( 'js/textures/sprites/disc.png' );
 
-const points = [];
-const points_profile = [];
+// const points = [];
+// const points_profile = [];
 
 const material_point = [];
 for ( let i = 0; i < colors.point_color.length; ++i )
@@ -52,8 +53,8 @@ for ( let i = 0; i < colors.point_color.length; ++i )
         } ) );
 }
 
-const lines = [];
-const lines_profile = [];
+// const lines = [];
+// const lines_profile = [];
 
 const material_line = [];
 for ( let i = 0; i < colors.line_color.length; ++i )
@@ -71,8 +72,16 @@ for ( let i = 0; i < colors.line_color.length; ++i )
         } ) );
 }
 
+const auto_play =
+{
+    status: 3,
+    delay: 100,
+    interval_object: null
+};
+
 const params =
 {
+    game_state: 0,
     initial_camera_height: 3,
     number_of_species: 3,
     domain_x_length: 4,
@@ -82,12 +91,14 @@ const params =
 
 const buttons =
 {
+    start_with_random_position: start_with_random_position,
+    change_game_state: change_game_state,
     camera_reset: camera_reset,
-    random_initialization: random_initialization,
 };
 
 initialization();
 animate();
+start_with_random_position();
 
 function initialization( )
 {
@@ -118,10 +129,24 @@ function initialization( )
     window.addEventListener( 'resize', on_window_resize );
 
     const gui_parameter_control = gui.addFolder( 'Parameters' );
-    gui_parameter_control.add( buttons, 'random_initialization' ).name( 'Initialize' );
-    gui_parameter_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'domain x length' ).listen();
-    gui_parameter_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'domain y length' ).listen();
-    gui_parameter_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'species init #' ).listen();
+    gui_parameter_control.add( buttons, 'start_with_random_position' ).name( 'Initialize' );
+    gui_parameter_control.add( buttons, 'change_game_state' ).name( 'Start / Pause' );
+    gui_parameter_control.add( auto_play, 'status', 1, 6, 1 ).name( 'Game Speed' ).listen().onChange(
+        function( value )
+        {
+            let new_delay = auto_play.delay;
+            if ( value === 1 ) new_delay = 500;
+            else if ( value === 2 ) new_delay = 200;
+            else if ( value === 3 ) new_delay = 100;
+            else if ( value === 4 ) new_delay = 50;
+            else if ( value === 5 ) new_delay = 20;
+            else if ( value === 6 ) new_delay = 10;
+            change_auto_play_speed( new_delay );
+        }
+    );
+    gui_parameter_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'Species Init #' ).listen();
+    gui_parameter_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'Domain x Length' ).listen();
+    gui_parameter_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'Domain y Length' ).listen();
 
     const gui_enhanced_control = gui.addFolder( 'Enhanced Control' ).close();
 
@@ -165,7 +190,59 @@ function camera_reset( )
     camera.lookAt( 0, 0, 0 );
 }
 
-function random_initialization( )
+function change_auto_play_speed( new_delay )
+{
+    if ( auto_play.delay !== new_delay )
+    {
+        auto_play.delay = new_delay;
+        if ( auto_play.interval_object !== null )
+        {
+            clearInterval( auto_play.interval_object );
+            auto_play.interval_object = setInterval( next_step, auto_play.delay );
+        }
+    }
+}
+
+function change_game_state( force_state = null )
+{
+    if ( force_state === null )
+    {
+        if ( auto_play.interval_object !== null )
+        {
+            clearInterval( auto_play.interval_object );
+            auto_play.interval_object = null;
+        }
+        if ( params.game_state === 0 )
+        {
+            // change to start
+            params.game_state = 1;
+            auto_play.interval_object = setInterval( next_step, auto_play.delay );
+        }
+        else if ( params.game_state === 1 )
+        {
+            // change to pause
+            params.game_state = 0;
+        }
+    }
+    else
+    {
+        if ( params.game_state !== force_state )
+        {
+            params.game_state = force_state;
+            if ( auto_play.interval_object !== null )
+            {
+                clearInterval( auto_play.interval_object );
+                auto_play.interval_object = null;
+            }
+            if ( params.game_state === 1 )
+            {
+                auto_play.interval_object = setInterval( next_step, auto_play.delay );
+            }
+        }
+    }
+}
+
+function draw_points( )
 {
     if ( species_profile.species_instance.length !== 0 )
     {
@@ -176,15 +253,49 @@ function random_initialization( )
         species_profile.species_instance = [];
     }
 
+    for ( let i = 0; i < species_profile.species_position.length; ++i )
+    {
+        species_profile.species_instance.push( add_points( species_profile.species_position[ i ], i ) );
+        species_group.add( species_profile.species_instance[ i ] );
+    }
+}
+
+function start_with_random_position( )
+{
+    species_profile.species_position = [];
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
     const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
-    console.log( x_range, y_range );
     for ( let i = 0; i < params.number_of_species; ++i )
     {
         const points = get_random_2d_points( params.species_initial_number, x_range, y_range );
-        species_profile.species_instance.push( add_points( points, i ) );
-        species_group.add( species_profile.species_instance[ i ] );
+        species_profile.species_position.push( points );
     }
+
+    draw_points();
+    change_game_state( 0 );
+}
+
+function add_random_noise( sigma = 0.02 )
+{
+    const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
+    const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    for ( let i = 0; i < species_profile.species_position.length; ++i )
+    {
+        for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
+        {
+            const noise = [ random_Gaussian( 0, sigma ), 0, random_Gaussian( 0, sigma ) ];
+            species_profile.species_position[ i ][ j ][ 0 ] += noise[ 0 ];
+            species_profile.species_position[ i ][ j ][ 2 ] += noise[ 2 ];
+            species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
+            species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
+        }
+    }
+}
+
+function next_step( )
+{
+    add_random_noise();
+    draw_points();
 }
 
 function render( )

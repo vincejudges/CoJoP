@@ -35,21 +35,60 @@ const species_profile =
 
 const sprite = new THREE.TextureLoader().load( 'js/textures/sprites/disc.png' );
 
+const point_hand_avatar = [];
+point_hand_avatar.push( new THREE.TextureLoader().load( 'js/textures/hand/rock.png' ) );
+point_hand_avatar.push( new THREE.TextureLoader().load( 'js/textures/hand/scissors.png' ) );
+point_hand_avatar.push( new THREE.TextureLoader().load( 'js/textures/hand/paper.png' ) );
+
+const point_emoji_avatar = [];
+point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/rock.png' ) );
+point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/scissors.png' ) );
+point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/scroll.png' ) );
+
 // const points = [];
 // const points_profile = [];
 
-const material_point = [];
+const material_point_plain = [];
 for ( let i = 0; i < colors.point_color.length; ++i )
 {
-    material_point.push(
+    material_point_plain.push(
         new THREE.PointsMaterial(
         {
             color: new THREE.Color( colors.point_color[ i ] ),
-            size: 0.07,
+            size: 0.10,
             alphaTest: 0.5,
             transparent: true,
             sizeAttenuation: true,
             map: sprite,
+        } ) );
+}
+
+const material_point_hand = [];
+for ( let i = 0; i < point_hand_avatar.length; ++i )
+{
+    material_point_hand.push(
+        new THREE.PointsMaterial(
+        {
+            color: new THREE.Color( colors.point_color[ i ] ),
+            size: 0.20,
+            alphaTest: 0.5,
+            transparent: true,
+            sizeAttenuation: true,
+            map: point_hand_avatar[ i ],
+        } ) );
+}
+
+const material_point_emoji = [];
+for ( let i = 0; i < point_emoji_avatar.length; ++i )
+{
+    material_point_emoji.push(
+        new THREE.PointsMaterial(
+        {
+            size: 0.15,
+            alphaTest: 0.5,
+            transparent: true,
+            sizeAttenuation: true,
+            map: point_emoji_avatar[ i ],
         } ) );
 }
 
@@ -82,6 +121,8 @@ const auto_play =
 const params =
 {
     game_state: 0,
+    texture_type_buffer: 2,
+    texture_type: 2,
     initial_camera_height: 3,
     number_of_species: 3,
     domain_x_length: 4,
@@ -131,6 +172,7 @@ function initialization( )
     const gui_parameter_control = gui.addFolder( 'Parameters' );
     gui_parameter_control.add( buttons, 'start_with_random_position' ).name( 'Initialize' );
     gui_parameter_control.add( buttons, 'change_game_state' ).name( 'Start / Pause' );
+    gui_parameter_control.add( params, 'texture_type_buffer', 0, 2, 1 ).name( 'Texture' ).listen().onChange( change_texture_type );
     gui_parameter_control.add( auto_play, 'status', 1, 6, 1 ).name( 'Game Speed' ).listen().onChange(
         function( value )
         {
@@ -172,7 +214,11 @@ function add_points( vertices, species_type )
     const geometry_points = new THREE.BufferGeometry();
     geometry_points.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices.flat(), 3 ) );
 
-    const points = new THREE.Points( geometry_points, material_point[ species_type ] );
+    let points = [];
+    if ( params.texture_type === 0 ) points = new THREE.Points( geometry_points, material_point_plain[ species_type ] );
+    else if ( params.texture_type === 1 ) points = new THREE.Points( geometry_points, material_point_hand[ species_type ] );
+    else if ( params.texture_type === 2 ) points = new THREE.Points( geometry_points, material_point_emoji[ species_type ] );
+
     return points;
 }
 
@@ -188,6 +234,15 @@ function camera_reset( )
 {
     camera.position.set( 0, params.initial_camera_height, 0 );
     camera.lookAt( 0, 0, 0 );
+}
+
+function change_texture_type( new_texture_type )
+{
+    if ( params.texture_type !== new_texture_type )
+    {
+        params.texture_type = new_texture_type;
+        draw_points();
+    }
 }
 
 function change_auto_play_speed( new_delay )

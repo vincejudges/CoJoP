@@ -14,7 +14,6 @@ const camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.inner
 const renderer = new THREE.WebGLRenderer( { antialias: true } );
 const stats = new Stats();
 const gui = new GUI();
-const point_cloud = new THREE.Group();
 
 const grid_helper = new THREE.GridHelper( 4, 1 );
 const world_axis = new THREE.AxesHelper( 2.5 );
@@ -159,7 +158,7 @@ const auto_play =
 {
     status: 5,
     delay: 20,
-    interval_object: null
+    interval_object: null,
 };
 
 const strategies =
@@ -186,11 +185,21 @@ const strategy_name_to_index_map =
 }
 const strategy_index_to_name_map = [ 'Balance', 'Chasing', 'Escaping' ];
 
+const collision_mode_name_to_index_map =
+{
+    Assimilate: 0,
+    Eliminate: 1,
+};
+const collision_mode_index_to_name_map = [ 'Assimilate', 'Eliminate' ];
+
 const params =
 {
     game_state: 0,
-    dt: 0.1,
+    dt: 0.02,
     mass: 100,
+    drag_factor: 0.05,
+    velocity_magnitude_limit: 0.1,
+    acceleration_magnitude_limit: 0.1,
     visibility: 3,
     visibility_squared: null,
     texture_type_buffer: null,
@@ -203,12 +212,16 @@ const params =
     strategy_list: [ 0, 0, 0 ],
     prey_list: [ 1, 2, 0 ],
     predator_list: [ 2, 0, 1 ],
+    collision_mode_name: null,
+    collision_mode: 0,
+    collision_radius: 0.12,
     domain_x_length: 4,
     domain_y_length: 4,
     species_initial_number: 60,
 };
 params.player_species_name = species_index_to_name_map[ params.player_species_index ];
 params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
+params.collision_mode_name = collision_mode_index_to_name_map[ params.collision_mode ];
 params.texture_type_buffer = params.texture_type;
 params.visibility_squared = params.visibility ** 2;
 change_initial_camera_height();
@@ -283,8 +296,19 @@ function initialization( )
     );
 
     const gui_hyper_control = gui_parameter_control.addFolder( 'Hyper Control' ).close();
+    gui_hyper_control.add( params, 'collision_mode_name', Object.keys( collision_mode_name_to_index_map ) ).name( 'Collision Mode' ).listen().onChange(
+        function ( value )
+        {
+            params.collision_mode = collision_mode_name_to_index_map[ value ];
+        }
+    );
     gui_hyper_control.add( params, 'texture_type_buffer', - 1, 3, 1 ).name( 'Texture Type' ).listen().onChange( change_texture_type );
     gui_hyper_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'Species Init #' ).listen();
+    gui_hyper_control.add( params, 'mass', 10, 500, 10 ).name( 'Mass' ).listen();
+    gui_hyper_control.add( params, 'drag_factor', 0.01, 0.50, 0.01 ).name( 'Drag Factor' ).listen();
+    gui_hyper_control.add( params, 'collision_radius', 0.05, 0.20, 0.01 ).name( 'Collision Radius' ).listen();
+    gui_hyper_control.add( params, 'velocity_magnitude_limit', 0.05, 0.5, 0.01 ).name( 'Velocity Limit' ).listen();
+    gui_hyper_control.add( params, 'acceleration_magnitude_limit', 0.05, 0.5, 0.01 ).name( 'Acceleration Limit' ).listen();
     gui_hyper_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'Domain x Length' ).listen();
     gui_hyper_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'Domain y Length' ).listen();
 
@@ -457,6 +481,7 @@ function add_random_noise( sigma = 0.02 )
             const noise = [ random_Gaussian( 0, sigma ), 0, random_Gaussian( 0, sigma ) ];
             species_profile.species_position[ i ][ j ][ 0 ] += noise[ 0 ];
             species_profile.species_position[ i ][ j ][ 2 ] += noise[ 2 ];
+            // periodic boundary condition
             species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
             species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
         }
@@ -515,6 +540,8 @@ function get_acceleration_vector( center_point, another_point_origin )
 function get_velocity_update( species_index )
 {
     const acceleration_times_dt = [];
+    const acceleration_limit = params.acceleration_magnitude_limit / params.dt;
+    const acceleration_limit_squared = acceleration_limit ** 2;
     const strategy_index = params.strategy_list[ species_index ];
     const chase_factor = strategies.chase_factor_list[ strategy_index ];
     const escape_factor = strategies.escape_factor_list[ strategy_index ];
@@ -547,34 +574,133 @@ function get_velocity_update( species_index )
         escape_dx *= escape_factor / params.mass;
         escape_dy *= escape_factor / params.mass;
 
-        acceleration_times_dt.push( [ ( chase_dx - escape_dx ) * params.dt, 0, ( chase_dy - escape_dy ) * params.dt ] );
+        let dx = chase_dx - escape_dx;
+        let dy = chase_dy - escape_dy;
+        const a_squared = dx ** 2 + dy ** 2;
+        if ( a_squared > acceleration_limit_squared )
+        {
+            const a = Math.sqrt( a_squared );
+            dx *= acceleration_limit / a;
+            dy *= acceleration_limit / a;
+        }
+        acceleration_times_dt.push( [ dx * params.dt, 0, dy * params.dt ] );
     }
 
     return acceleration_times_dt;
+}
+
+function update_species_position( )
+{
+    const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
+    const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    const velocity_limit = params.velocity_magnitude_limit / params.dt;
+    const velocity_limit_squared = velocity_limit ** 2;
+    for ( let i = 0; i < params.number_of_species; ++i )
+    {
+        const velocity_update = get_velocity_update( i );
+        for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
+        {
+            // resistance: point tends to become stationary
+            species_profile.species_velocity[ i ][ j ][ 0 ] *= 1 - params.drag_factor;
+            species_profile.species_velocity[ i ][ j ][ 2 ] *= 1 - params.drag_factor;
+            // velocity is changed according to the force
+            species_profile.species_velocity[ i ][ j ][ 0 ] += velocity_update[ j ][ 0 ];
+            species_profile.species_velocity[ i ][ j ][ 2 ] += velocity_update[ j ][ 2 ];
+            // velocity has a bound
+            const v_squared = species_profile.species_velocity[ i ][ j ][ 0 ] ** 2 + species_profile.species_velocity[ i ][ j ][ 2 ] ** 2;
+            if ( v_squared > velocity_limit_squared )
+            {
+                const v = Math.sqrt( v_squared );
+                species_profile.species_velocity[ i ][ j ][ 0 ] *= velocity_limit / v;
+                species_profile.species_velocity[ i ][ j ][ 2 ] *= velocity_limit / v;
+            }
+            // position is changed according to the velocity
+            species_profile.species_position[ i ][ j ][ 0 ] += species_profile.species_velocity[ i ][ j ][ 0 ] * params.dt;
+            species_profile.species_position[ i ][ j ][ 2 ] += species_profile.species_velocity[ i ][ j ][ 2 ] * params.dt;
+            // periodic boundary condition
+            species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
+            species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
+        }
+    }
+}
+
+function get_species_collision_update( species_index )
+{
+    const prey_index = params.prey_list[ species_index ];
+    const predator_index = params.predator_list[ species_index ];
+    const collision_radius_squared = params.collision_radius ** 2;
+
+    const new_species_position = [];
+    const new_species_velocity = [];
+    for ( let i = 0; i < species_profile.species_position[ species_index ].length; ++i )
+    {
+        const species_point = species_profile.species_position[ species_index ][ i ];
+        let exist_flag = true;
+        for ( let j = 0; j < species_profile.species_position[ predator_index ].length; ++j )
+        {
+            const predator_point = species_profile.species_position[ predator_index ][ j ];
+            const d_squared = distance_squared( species_point, predator_point );
+            if ( d_squared < collision_radius_squared )
+            {
+                exist_flag = false;
+                break;
+            }
+        }
+        if ( exist_flag )
+        {
+            new_species_position.push( species_point );
+            new_species_velocity.push( species_profile.species_velocity[ species_index ][ i ] );
+        }
+    }
+
+    if ( params.collision_mode === 0 )
+    {
+        for ( let j = 0; j < species_profile.species_position[ prey_index ].length; ++j )
+        {
+            const prey_point = species_profile.species_position[ prey_index ][ j ];
+            let vanish_flag = false;
+            for ( let i = 0; i < species_profile.species_position[ species_index ].length; ++i )
+            {
+                const species_point = species_profile.species_position[ species_index ][ i ];
+                const d_squared = distance_squared( species_point, prey_point );
+                if ( d_squared < collision_radius_squared )
+                {
+                    vanish_flag = true;
+                    break;
+                }
+            }
+            if ( vanish_flag )
+            {
+                new_species_position.push( prey_point );
+                new_species_velocity.push( species_profile.species_velocity[ prey_index ][ j ] );
+            }
+        }
+    }
+
+    return [ new_species_position, new_species_velocity ];
+}
+
+function update_species_collision( )
+{
+    const new_species_position = [];
+    const new_species_velocity = [];
+    for ( let i = 0; i < params.number_of_species; ++i )
+    {
+        const update = get_species_collision_update( i );
+        new_species_position.push( update[ 0 ] );
+        new_species_velocity.push( update[ 1 ] );
+    }
+    species_profile.species_position = new_species_position;
+    species_profile.species_velocity = new_species_velocity;
 }
 
 function next_step( )
 {
     // add_random_noise();
 
-    const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
-    const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
-    const velocity_range = [ - 0.2 / params.dt, 0.2 / params.dt ];
-    for ( let i = 0; i < params.number_of_species; ++i )
-    {
-        const velocity_update = get_velocity_update( i );
-        for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
-        {
-            species_profile.species_velocity[ i ][ j ][ 0 ] += velocity_update[ j ][ 0 ];
-            species_profile.species_velocity[ i ][ j ][ 2 ] += velocity_update[ j ][ 2 ];
-            species_profile.species_velocity[ i ][ j ][ 0 ] = Math.min( Math.max( velocity_range[ 0 ], velocity_update[ j ][ 0 ] ), velocity_range[ 1 ] );
-            species_profile.species_velocity[ i ][ j ][ 2 ] = Math.min( Math.max( velocity_range[ 0 ], velocity_update[ j ][ 2 ] ), velocity_range[ 1 ] );
-            species_profile.species_position[ i ][ j ][ 0 ] += species_profile.species_velocity[ i ][ j ][ 0 ] * params.dt;
-            species_profile.species_position[ i ][ j ][ 2 ] += species_profile.species_velocity[ i ][ j ][ 2 ] * params.dt;
-            species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
-            species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
-        }
-    }
+    update_species_position();
+    update_species_collision();
+
     draw_points();
 }
 

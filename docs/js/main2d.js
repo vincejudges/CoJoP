@@ -16,7 +16,7 @@ const stats = new Stats();
 const gui = new GUI();
 const point_cloud = new THREE.Group();
 
-const grid_helper = new THREE.GridHelper( 4, 64 );;
+const grid_helper = new THREE.GridHelper( 4, 1 );
 const world_axis = new THREE.AxesHelper( 2.5 );
 
 const colors =
@@ -30,8 +30,18 @@ const species_group = new THREE.Group();
 const species_profile =
 {
     species_position: [],
+    species_velocity: [],
     species_instance: [],
 };
+
+const species_name_to_index_map =
+{
+    Rock: 0,
+    Scissors: 1,
+    Paper: 2,
+}
+const species_index_to_name_map = [ 'Rock', 'Scissors', 'Paper' ];
+
 
 const sprite = new THREE.TextureLoader().load( 'js/textures/sprites/disc.png' );
 
@@ -45,8 +55,15 @@ point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/rock
 point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/scissors.png' ) );
 point_emoji_avatar.push( new THREE.TextureLoader().load( 'js/textures/emoji/scroll.png' ) );
 
-// const points = [];
-// const points_profile = [];
+const point_emoji_avatar_alternative_1 = [];
+point_emoji_avatar_alternative_1.push( new THREE.TextureLoader().load( 'js/textures/emoji/raised_fist_light_skin_tone.png' ) );
+point_emoji_avatar_alternative_1.push( new THREE.TextureLoader().load( 'js/textures/emoji/victory_hand_light_skin_tone.png' ) );
+point_emoji_avatar_alternative_1.push( new THREE.TextureLoader().load( 'js/textures/emoji/hand_with_fingers_splayed_light_skin_tone.png' ) );
+
+const point_emoji_avatar_alternative_2 = [];
+point_emoji_avatar_alternative_2.push( new THREE.TextureLoader().load( 'js/textures/emoji/toilet.png' ) );
+point_emoji_avatar_alternative_2.push( new THREE.TextureLoader().load( 'js/textures/emoji/pile_of_poo.png' ) );
+point_emoji_avatar_alternative_2.push( new THREE.TextureLoader().load( 'js/textures/emoji/face_vomiting.png' ) );
 
 const material_point_plain = [];
 for ( let i = 0; i < colors.point_color.length; ++i )
@@ -92,8 +109,35 @@ for ( let i = 0; i < point_emoji_avatar.length; ++i )
         } ) );
 }
 
-// const lines = [];
-// const lines_profile = [];
+const material_point_emoji_alternative_1 = [];
+for ( let i = 0; i < point_emoji_avatar_alternative_1.length; ++i )
+{
+    material_point_emoji_alternative_1.push(
+        new THREE.PointsMaterial(
+        {
+            color: new THREE.Color( colors.point_color[ i ] ),
+            size: 0.15,
+            alphaTest: 0.8,
+            transparent: true,
+            sizeAttenuation: true,
+            map: point_emoji_avatar_alternative_1[ i ],
+        } ) );
+}
+
+const material_point_emoji_alternative_2 = [];
+for ( let i = 0; i < point_emoji_avatar_alternative_2.length; ++i )
+{
+    material_point_emoji_alternative_2.push(
+        new THREE.PointsMaterial(
+        {
+            size: 0.15,
+            alphaTest: 0.5,
+            transparent: true,
+            sizeAttenuation: true,
+            map: point_emoji_avatar_alternative_2[ i ],
+        } ) );
+}
+
 
 const material_line = [];
 for ( let i = 0; i < colors.line_color.length; ++i )
@@ -113,22 +157,60 @@ for ( let i = 0; i < colors.line_color.length; ++i )
 
 const auto_play =
 {
-    status: 3,
-    delay: 100,
+    status: 5,
+    delay: 20,
     interval_object: null
 };
+
+const strategies =
+{
+    balance_mode_chase_factor: 1,
+    balance_mode_escape_factor: 2,
+
+    chasing_mode_chase_factor: 1.6,
+    chasing_mode_escape_factor: 1.1,
+
+    escaping_mode_chase_factor: 0.5,
+    escaping_mode_escape_factor: 2.5,
+
+    chase_factor_list: null,
+    escape_factor_list: null,
+}
+strategies.chase_factor_list = [ strategies.balance_mode_chase_factor, strategies.chasing_mode_chase_factor, strategies.escaping_mode_chase_factor ];
+strategies.escape_factor_list = [ strategies.balance_mode_escape_factor, strategies.chasing_mode_escape_factor, strategies.escaping_mode_escape_factor ];
+const strategy_name_to_index_map =
+{
+    Balance: 0,
+    Chasing: 1,
+    Escaping: 2,
+}
+const strategy_index_to_name_map = [ 'Balance', 'Chasing', 'Escaping' ];
 
 const params =
 {
     game_state: 0,
-    texture_type_buffer: 2,
-    texture_type: 2,
+    dt: 0.1,
+    mass: 100,
+    visibility: 3,
+    visibility_squared: null,
+    texture_type_buffer: null,
+    texture_type: 3,
     initial_camera_height: 3,
     number_of_species: 3,
+    player_species_name: null,
+    player_species_index: 0,
+    player_strategy_name: null,
+    strategy_list: [ 0, 0, 0 ],
+    prey_list: [ 1, 2, 0 ],
+    predator_list: [ 2, 0, 1 ],
     domain_x_length: 4,
     domain_y_length: 4,
     species_initial_number: 60,
 };
+params.player_species_name = species_index_to_name_map[ params.player_species_index ];
+params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
+params.texture_type_buffer = params.texture_type;
+params.visibility_squared = params.visibility ** 2;
 change_initial_camera_height();
 
 const buttons =
@@ -173,7 +255,19 @@ function initialization( )
     const gui_parameter_control = gui.addFolder( 'Parameters' );
     gui_parameter_control.add( buttons, 'start_with_random_position' ).name( 'Initialize' );
     gui_parameter_control.add( buttons, 'change_game_state' ).name( 'Start / Pause' );
-    gui_parameter_control.add( params, 'texture_type_buffer', 0, 2, 1 ).name( 'Texture' ).listen().onChange( change_texture_type );
+    gui_parameter_control.add( params, 'player_strategy_name', Object.keys( strategy_name_to_index_map ) ).name( 'Player Strategy' ).listen().onChange(
+        function( value )
+        {
+            params.strategy_list[ params.player_species_index ] = strategy_name_to_index_map[ value ];
+        }
+    );
+    gui_parameter_control.add( params, 'player_species_name', Object.keys( species_name_to_index_map ) ).name( 'Player Controls' ).listen().onChange(
+        function( value )
+        {
+            params.player_species_index = species_name_to_index_map[ value ];
+            params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
+        }
+    );
     gui_parameter_control.add( auto_play, 'status', 1, 6, 1 ).name( 'Game Speed' ).listen().onChange(
         function( value )
         {
@@ -187,9 +281,12 @@ function initialization( )
             change_auto_play_speed( new_delay );
         }
     );
-    gui_parameter_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'Species Init #' ).listen();
-    gui_parameter_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'Domain x Length' ).listen();
-    gui_parameter_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'Domain y Length' ).listen();
+
+    const gui_hyper_control = gui_parameter_control.addFolder( 'Hyper Control' ).close();
+    gui_hyper_control.add( params, 'texture_type_buffer', - 1, 3, 1 ).name( 'Texture Type' ).listen().onChange( change_texture_type );
+    gui_hyper_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'Species Init #' ).listen();
+    gui_hyper_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'Domain x Length' ).listen();
+    gui_hyper_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'Domain y Length' ).listen();
 
     const gui_enhanced_control = gui.addFolder( 'Enhanced Control' ).close();
 
@@ -216,9 +313,11 @@ function add_points( vertices, species_type )
     geometry_points.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices.flat(), 3 ) );
 
     let points = [];
-    if ( params.texture_type === 0 ) points = new THREE.Points( geometry_points, material_point_plain[ species_type ] );
+    if ( params.texture_type === - 1 ) points = new THREE.Points( geometry_points, material_point_emoji_alternative_2[ species_type ] );
+    else if ( params.texture_type === 0 ) points = new THREE.Points( geometry_points, material_point_plain[ species_type ] );
     else if ( params.texture_type === 1 ) points = new THREE.Points( geometry_points, material_point_hand[ species_type ] );
-    else if ( params.texture_type === 2 ) points = new THREE.Points( geometry_points, material_point_emoji[ species_type ] );
+    else if ( params.texture_type === 2 ) points = new THREE.Points( geometry_points, material_point_emoji_alternative_1[ species_type ] );
+    else if ( params.texture_type === 3 ) points = new THREE.Points( geometry_points, material_point_emoji[ species_type ] );
 
     return points;
 }
@@ -327,13 +426,21 @@ function draw_points( )
 function start_with_random_position( )
 {
     species_profile.species_position = [];
+    species_profile.species_velocity = [];
+    params.strategy_list = [];
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
     const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
     for ( let i = 0; i < params.number_of_species; ++i )
     {
-        const points = get_random_2d_points( params.species_initial_number, x_range, y_range );
-        species_profile.species_position.push( points );
+        const position = get_random_2d_points( params.species_initial_number, x_range, y_range );
+        const velocity = [];
+        for ( let j = 0; j < params.species_initial_number; ++j ) velocity.push( [ 0, 0, 0 ] );
+        species_profile.species_position.push( position );
+        species_profile.species_velocity.push( velocity );
+        params.strategy_list.push( 0 );
     }
+
+    params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
 
     draw_points();
     change_game_state( 0 );
@@ -356,9 +463,118 @@ function add_random_noise( sigma = 0.02 )
     }
 }
 
+function distance_squared( point_1, point_2 )
+{
+    return ( point_1[ 0 ] - point_2[ 0 ] ) ** 2 + ( point_1[ 2 ] - point_2[ 2 ] ) ** 2;
+}
+
+function get_acceleration_vector( center_point, another_point_origin )
+{
+    let dx = 0;
+    let dy = 0;
+    let another_point = another_point_origin;
+    let d_squared = distance_squared( center_point, another_point_origin );
+
+    let another_point_reflected = [ another_point_origin[ 0 ] - params.domain_x_length, 0, another_point_origin[ 2 ] ];
+    let d_squared_relected = distance_squared( center_point, another_point_reflected );
+    if ( d_squared_relected < d_squared )
+    {
+        d_squared = d_squared_relected;
+        another_point = [ another_point_reflected[ 0 ], 0, another_point_reflected[ 2 ] ];
+    }
+    another_point_reflected = [ another_point_origin[ 0 ] + params.domain_x_length, 0, another_point_origin[ 2 ] ];
+    d_squared_relected = distance_squared( center_point, another_point_reflected );
+    if ( d_squared_relected < d_squared )
+    {
+        d_squared = d_squared_relected;
+        another_point = [ another_point_reflected[ 0 ], 0, another_point_reflected[ 2 ] ];
+    }
+    another_point_reflected = [ another_point_origin[ 0 ], 0, another_point_origin[ 2 ] - params.domain_y_length ];
+    d_squared_relected = distance_squared( center_point, another_point_reflected );
+    if ( d_squared_relected < d_squared )
+    {
+        d_squared = d_squared_relected;
+        another_point = [ another_point_reflected[ 0 ], 0, another_point_reflected[ 2 ] ];
+    }
+    another_point_reflected = [ another_point_origin[ 0 ], 0, another_point_origin[ 2 ] + params.domain_y_length ];
+    d_squared_relected = distance_squared( center_point, another_point_reflected );
+    if ( d_squared_relected < d_squared )
+    {
+        d_squared = d_squared_relected;
+        another_point = [ another_point_reflected[ 0 ], 0, another_point_reflected[ 2 ] ];
+    }
+    if ( d_squared < params.visibility_squared )
+    {
+        const d = Math.sqrt( d_squared );
+        dx = ( another_point[ 0 ] - center_point[ 0 ] ) / ( d * d_squared );
+        dy = ( another_point[ 2 ] - center_point[ 2 ] ) / ( d * d_squared );
+    }
+    return [ dx, 0, dy ];
+}
+
+function get_velocity_update( species_index )
+{
+    const acceleration_times_dt = [];
+    const strategy_index = params.strategy_list[ species_index ];
+    const chase_factor = strategies.chase_factor_list[ strategy_index ];
+    const escape_factor = strategies.escape_factor_list[ strategy_index ];
+    const prey_index = params.prey_list[ species_index ];
+    const predator_index = params.predator_list[ species_index ];
+    for ( let i = 0; i < species_profile.species_position[ species_index ].length; ++i )
+    {
+        const species_point = species_profile.species_position[ species_index ][ i ];
+        let chase_dx = 0;
+        let chase_dy = 0;
+        let escape_dx = 0;
+        let escape_dy = 0;
+        for ( let j = 0; j < species_profile.species_position[ prey_index ].length; ++j )
+        {
+            const prey_point_origin = species_profile.species_position[ prey_index ][ j ];
+            const update_vector = get_acceleration_vector( species_point, prey_point_origin );
+            chase_dx += update_vector[ 0 ];
+            chase_dy += update_vector[ 2 ];
+        }
+        chase_dx *= chase_factor / params.mass;
+        chase_dy *= chase_factor / params.mass;
+
+        for ( let j = 0; j < species_profile.species_position[ predator_index ].length; ++j )
+        {
+            const predator_point_origin = species_profile.species_position[ predator_index ][ j ];
+            const update_vector = get_acceleration_vector( species_point, predator_point_origin );
+            escape_dx += update_vector[ 0 ];
+            escape_dy += update_vector[ 2 ];
+        }
+        escape_dx *= escape_factor / params.mass;
+        escape_dy *= escape_factor / params.mass;
+
+        acceleration_times_dt.push( [ ( chase_dx - escape_dx ) * params.dt, 0, ( chase_dy - escape_dy ) * params.dt ] );
+    }
+
+    return acceleration_times_dt;
+}
+
 function next_step( )
 {
-    add_random_noise();
+    // add_random_noise();
+
+    const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
+    const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    const velocity_range = [ - 0.2 / params.dt, 0.2 / params.dt ];
+    for ( let i = 0; i < params.number_of_species; ++i )
+    {
+        const velocity_update = get_velocity_update( i );
+        for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
+        {
+            species_profile.species_velocity[ i ][ j ][ 0 ] += velocity_update[ j ][ 0 ];
+            species_profile.species_velocity[ i ][ j ][ 2 ] += velocity_update[ j ][ 2 ];
+            species_profile.species_velocity[ i ][ j ][ 0 ] = Math.min( Math.max( velocity_range[ 0 ], velocity_update[ j ][ 0 ] ), velocity_range[ 1 ] );
+            species_profile.species_velocity[ i ][ j ][ 2 ] = Math.min( Math.max( velocity_range[ 0 ], velocity_update[ j ][ 2 ] ), velocity_range[ 1 ] );
+            species_profile.species_position[ i ][ j ][ 0 ] += species_profile.species_velocity[ i ][ j ][ 0 ] * params.dt;
+            species_profile.species_position[ i ][ j ][ 2 ] += species_profile.species_velocity[ i ][ j ][ 2 ] * params.dt;
+            species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
+            species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
+        }
+    }
     draw_points();
 }
 

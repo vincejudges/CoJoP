@@ -129,6 +129,7 @@ const params =
     domain_y_length: 4,
     species_initial_number: 60,
 };
+change_initial_camera_height();
 
 const buttons =
 {
@@ -201,7 +202,7 @@ function initialization( )
     const gui_move = gui_enhanced_control.addFolder( 'Camera Movement' ).close();
     gui_move.add( camera.position, 'x', - 5, 5 ).name( 'position.x' ).listen();
     gui_move.add( camera.position, 'z', - 5, 5 ).name( 'position.z' ).listen();
-    gui_move.add( camera.position, 'y', - 5, 5 ).name( 'position.y' ).listen();
+    gui_move.add( camera.position, 'y', 1, 7 ).name( 'position.y' ).listen();
     gui_move.add( camera.rotation, 'x', - Math.PI, Math.PI ).name( 'rotation.x' ).listen();
     gui_move.add( camera.rotation, 'y', - Math.PI, Math.PI ).name( 'rotation.y' ).listen();
     gui_move.add( camera.rotation, 'z', - Math.PI, Math.PI ).name( 'rotation.z' ).listen();
@@ -222,12 +223,20 @@ function add_points( vertices, species_type )
     return points;
 }
 
+function change_initial_camera_height( )
+{
+    if ( window.innerWidth < window.innerHeight ) params.initial_camera_height = Math.min( 7, 3 * window.innerHeight / window.innerWidth );
+    else params.initial_camera_height = 3;
+}
+
 function on_window_resize( )
 {
     camera.aspect = window.innerWidth / window.innerHeight;;
     camera.updateProjectionMatrix();
 
     renderer.setSize( window.innerWidth, window.innerHeight );
+    change_initial_camera_height();
+    camera_reset();
 }
 
 function camera_reset( )

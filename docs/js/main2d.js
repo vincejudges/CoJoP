@@ -218,14 +218,16 @@ const params =
     domain_x_length: 4,
     domain_y_length: 4,
     species_initial_number: 60,
-    use_grid_index: true,
+    use_grid_index: false,
 };
 params.player_species_name = species_index_to_name_map[ params.player_species_index ];
 params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
 params.collision_mode_name = collision_mode_index_to_name_map[ params.collision_mode ];
 params.texture_type_buffer = params.texture_type;
 params.visibility_squared = params.visibility ** 2;
+params.grid_length = params.collision_radius * 10;
 change_initial_camera_height();
+
 
 const buttons =
 {
@@ -239,8 +241,7 @@ let grid_indexes =  [];
 
 function update_grid_index()
 {
-    const radius = params.collision_radius;
-    const grid_length = radius * 2;
+    const grid_length = params.grid_length;
     grid_indexes = [];
     for ( let i = 0; i < species_profile.species_position.length; ++i )
     {   
@@ -258,15 +259,39 @@ function update_grid_index()
     }
 }
 
-function get_neighbor_points(species_index, position) 
+// function get_neighbor_points(species_index, position) 
+// {
+//     const grid_length = params.collision_radius * 2;
+//     const cell_id = position.map(element => Math.floor(element / grid_length));
+
+//     const getCombinations = (A) =>
+//         A.flatMap((ai, i) =>
+//             [-1, 0, 1].map((offset) => {
+//             const combination = [...A];
+//             combination[i] = ai + offset;
+//             return combination;
+//             })
+//         );
+//     const neighbor_cell_ids = getCombinations(cell_id);
+//     const grid_index = grid_indexes[species_index];
+//     return neighbor_cell_ids.reduce((arr, key) => arr.concat(grid_index[key.toString()] || []), []);
+// }
+
+function get_points_within_radius(species_index, position, radius) 
 {
-    const radius = params.collision_radius;
-    const grid_length = radius * 2;
+    const grid_length = params.grid_length;
+
     const cell_id = position.map(element => Math.floor(element / grid_length));
+
+    const cell_number_for_radius = Math.ceil(radius / grid_length);
+    const cell_id_range = [];
+    for (let i=-cell_number_for_radius; i<=cell_number_for_radius;i++){
+        cell_id_range.push(i);
+    }
 
     const getCombinations = (A) =>
         A.flatMap((ai, i) =>
-            [-1, 0, 1].map((offset) => {
+            cell_id_range.map((offset) => {
             const combination = [...A];
             combination[i] = ai + offset;
             return combination;
@@ -274,9 +299,16 @@ function get_neighbor_points(species_index, position)
         );
     const neighbor_cell_ids = getCombinations(cell_id);
     const grid_index = grid_indexes[species_index];
-    return neighbor_cell_ids.reduce((arr, key) => arr.concat(grid_index[key.toString()] || []), []);
-
+    const res = []
+    for (let i = 0; i < neighbor_cell_ids.length; i++) {
+        const key = neighbor_cell_ids[i].toString();
+        if (key in grid_index) {
+            res.push(...grid_index[key]);
+        }
+    }
+    return res;
 }
+
 
 
 
@@ -350,7 +382,7 @@ function initialization( )
         }
     );
     gui_hyper_control.add( params, 'texture_type_buffer', - 1, 3, 1 ).name( 'Texture Type' ).listen().onChange( change_texture_type );
-    gui_hyper_control.add( params, 'species_initial_number', 30, 500, 10 ).name( 'Species Init #' ).listen();
+    gui_hyper_control.add( params, 'species_initial_number', 30, 5000, 10 ).name( 'Species Init #' ).listen();
     gui_hyper_control.add( params, 'mass', 10, 500, 10 ).name( 'Mass' ).listen();
     gui_hyper_control.add( params, 'drag_factor', 0.01, 0.50, 0.01 ).name( 'Drag Factor' ).listen();
     gui_hyper_control.add( params, 'collision_radius', 0.05, 0.20, 0.01 ).name( 'Collision Radius' ).listen();
@@ -450,6 +482,7 @@ function change_game_state( force_state = null )
         {
             // change to start
             params.game_state = 1;
+            if (params.use_grid_index) update_grid_index();
             auto_play.interval_object = setInterval( next_step, auto_play.delay );
         }
         else if ( params.game_state === 1 )
@@ -470,6 +503,7 @@ function change_game_state( force_state = null )
             }
             if ( params.game_state === 1 )
             {
+                if (params.use_grid_index) update_grid_index(); 
                 auto_play.interval_object = setInterval( next_step, auto_play.delay );
             }
         }
@@ -601,6 +635,7 @@ function get_velocity_update( species_index )
         let chase_dy = 0;
         let escape_dx = 0;
         let escape_dy = 0;
+
         for ( let j = 0; j < species_profile.species_position[ prey_index ].length; ++j )
         {
             const prey_point_origin = species_profile.species_position[ prey_index ][ j ];
@@ -636,6 +671,61 @@ function get_velocity_update( species_index )
     return acceleration_times_dt;
 }
 
+function get_velocity_update_grid_index( species_index )
+{
+    const acceleration_times_dt = [];
+    const acceleration_limit = params.acceleration_magnitude_limit / params.dt;
+    const acceleration_limit_squared = acceleration_limit ** 2;
+    const strategy_index = params.strategy_list[ species_index ];
+    const chase_factor = strategies.chase_factor_list[ strategy_index ];
+    const escape_factor = strategies.escape_factor_list[ strategy_index ];
+    const prey_index = params.prey_list[ species_index ];
+    const predator_index = params.predator_list[ species_index ];
+    for ( let i = 0; i < species_profile.species_position[ species_index ].length; ++i )
+    {
+        const species_point = species_profile.species_position[ species_index ][ i ];
+        let chase_dx = 0;
+        let chase_dy = 0;
+        let escape_dx = 0;
+        let escape_dy = 0;
+
+        const preys = get_points_within_radius(prey_index, species_point, params.visibility);
+        for ( let j = 0; j < preys.length; ++j )
+        {
+            const prey_point_origin = species_profile.species_position[ prey_index ][ preys[j] ];
+            const update_vector = get_acceleration_vector( species_point, prey_point_origin );
+            chase_dx += update_vector[ 0 ];
+            chase_dy += update_vector[ 2 ];
+        }
+        chase_dx *= chase_factor / params.mass;
+        chase_dy *= chase_factor / params.mass;
+
+        const predators = get_points_within_radius(predator_index, species_point, params.visibility);
+        for ( let j = 0; j < predators.length; ++j )
+        {
+            const predator_point_origin = species_profile.species_position[ predator_index ][ predators[j] ];
+            const update_vector = get_acceleration_vector( species_point, predator_point_origin );
+            escape_dx += update_vector[ 0 ];
+            escape_dy += update_vector[ 2 ];
+        }
+        escape_dx *= escape_factor / params.mass;
+        escape_dy *= escape_factor / params.mass;
+
+        let dx = chase_dx - escape_dx;
+        let dy = chase_dy - escape_dy;
+        const a_squared = dx ** 2 + dy ** 2;
+        if ( a_squared > acceleration_limit_squared )
+        {
+            const a = Math.sqrt( a_squared );
+            dx *= acceleration_limit / a;
+            dy *= acceleration_limit / a;
+        }
+        acceleration_times_dt.push( [ dx * params.dt, 0, dy * params.dt ] );
+    }
+
+    return acceleration_times_dt;
+}
+
 function update_species_position( )
 {
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
@@ -644,7 +734,7 @@ function update_species_position( )
     const velocity_limit_squared = velocity_limit ** 2;
     for ( let i = 0; i < params.number_of_species; ++i )
     {
-        const velocity_update = get_velocity_update( i );
+        const velocity_update = params.use_grid_index? get_velocity_update_grid_index(i): get_velocity_update( i );
         for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
         {
             // resistance: point tends to become stationary
@@ -684,9 +774,7 @@ function get_species_collision_update_grid_index_version( species_index )
         const species_point = species_profile.species_position[ species_index ][ i ];
         let exist_flag = true;
 
-        const neighbor_predators = get_neighbor_points(predator_index, species_point);
-
-        console.log(neighbor_predators.length);
+        const neighbor_predators = get_points_within_radius(predator_index, species_point, params.collision_radius);
         for ( let j = 0; j < neighbor_predators.length; ++j )
         {
             const predator_point = species_profile.species_position[ predator_index ][ neighbor_predators[j] ];
@@ -711,7 +799,7 @@ function get_species_collision_update_grid_index_version( species_index )
             const prey_point = species_profile.species_position[ prey_index ][ j ];
             let vanish_flag = false;
 
-            const neighbor_species = get_neighbor_points(species_index, prey_point);
+            const neighbor_species = get_points_within_radius(species_index, prey_point, params.collision_radius);
             for ( let i = 0; i < neighbor_species.length; ++i )
             {
                 const species_point = species_profile.species_position[ species_index ][ neighbor_species[i] ];
@@ -806,12 +894,27 @@ function update_species_collision( )
 function next_step( )
 {
     // add_random_noise();
-
-    update_species_position();
+    const time_list = [];
+    time_list.push(performance.now());
     if (params.use_grid_index) update_grid_index();
+    time_list.push(performance.now());
+    update_species_position();
+    time_list.push(performance.now());
+
+    if (params.use_grid_index) update_grid_index();
+    time_list.push(performance.now());
     update_species_collision();
+    time_list.push(performance.now());
 
     draw_points();
+    time_list.push(performance.now());
+
+    const total_time = time_list[time_list.length - 1] - time_list[0];
+    console.log(time_list.map((element, index, arr) => {
+        if (index === 0) return null;
+        return ((element - arr[index - 1]) / total_time * 100).toString() + "%";
+      }).filter((element) => element !== null));
+    console.log(total_time);
 }
 
 function render( )

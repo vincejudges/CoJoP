@@ -218,6 +218,7 @@ const params =
     domain_x_length: 4,
     domain_y_length: 4,
     species_initial_number: 60,
+    use_grid_index: true,
 };
 params.player_species_name = species_index_to_name_map[ params.player_species_index ];
 params.player_strategy_name = strategy_index_to_name_map[ params.strategy_list[ params.player_species_index ] ];
@@ -232,6 +233,52 @@ const buttons =
     change_game_state: change_game_state,
     camera_reset: camera_reset,
 };
+
+
+let grid_indexes =  [];
+
+function update_grid_index()
+{
+    const radius = params.collision_radius;
+    const grid_length = radius * 2;
+    grid_indexes = [];
+    for ( let i = 0; i < species_profile.species_position.length; ++i )
+    {   
+        grid_indexes.push({});
+        for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
+        {
+            const pos = species_profile.species_position[i][j];
+            const cell_id = pos.map(element => Math.floor(element / grid_length));
+            const cell_id_str = cell_id.toString();
+            if (!(cell_id_str in grid_indexes[i])) {
+                grid_indexes[i][cell_id_str] = [];
+            }
+            grid_indexes[i][cell_id_str].push(j);
+        }
+    }
+}
+
+function get_neighbor_points(species_index, position) 
+{
+    const radius = params.collision_radius;
+    const grid_length = radius * 2;
+    const cell_id = position.map(element => Math.floor(element / grid_length));
+
+    const getCombinations = (A) =>
+        A.flatMap((ai, i) =>
+            [-1, 0, 1].map((offset) => {
+            const combination = [...A];
+            combination[i] = ai + offset;
+            return combination;
+            })
+        );
+    const neighbor_cell_ids = getCombinations(cell_id);
+    const grid_index = grid_indexes[species_index];
+    return neighbor_cell_ids.reduce((arr, key) => arr.concat(grid_index[key.toString()] || []), []);
+
+}
+
+
 
 initialization();
 animate();
@@ -309,8 +356,8 @@ function initialization( )
     gui_hyper_control.add( params, 'collision_radius', 0.05, 0.20, 0.01 ).name( 'Collision Radius' ).listen();
     gui_hyper_control.add( params, 'velocity_magnitude_limit', 0.05, 0.5, 0.01 ).name( 'Velocity Limit' ).listen();
     gui_hyper_control.add( params, 'acceleration_magnitude_limit', 0.05, 0.5, 0.01 ).name( 'Acceleration Limit' ).listen();
-    gui_hyper_control.add( params, 'domain_x_length', 0.2, 4 ).name( 'Domain x Length' ).listen();
-    gui_hyper_control.add( params, 'domain_y_length', 0.2, 4 ).name( 'Domain y Length' ).listen();
+    gui_hyper_control.add( params, 'domain_x_length', 0.2, 40 ).name( 'Domain x Length' ).listen();
+    gui_hyper_control.add( params, 'domain_y_length', 0.2, 40 ).name( 'Domain y Length' ).listen();
 
     const gui_enhanced_control = gui.addFolder( 'Enhanced Control' ).close();
 
@@ -624,6 +671,67 @@ function update_species_position( )
     }
 }
 
+function get_species_collision_update_grid_index_version( species_index )
+{
+    const prey_index = params.prey_list[ species_index ];
+    const predator_index = params.predator_list[ species_index ];
+    const collision_radius_squared = params.collision_radius ** 2;
+
+    const new_species_position = [];
+    const new_species_velocity = [];
+    for ( let i = 0; i < species_profile.species_position[ species_index ].length; ++i )
+    {
+        const species_point = species_profile.species_position[ species_index ][ i ];
+        let exist_flag = true;
+
+        const neighbor_predators = get_neighbor_points(predator_index, species_point);
+
+        console.log(neighbor_predators.length);
+        for ( let j = 0; j < neighbor_predators.length; ++j )
+        {
+            const predator_point = species_profile.species_position[ predator_index ][ neighbor_predators[j] ];
+            const d_squared = distance_squared( species_point, predator_point );
+            if ( d_squared < collision_radius_squared )
+            {
+                exist_flag = false;
+                break;
+            }
+        }
+        if ( exist_flag )
+        {
+            new_species_position.push( species_point );
+            new_species_velocity.push( species_profile.species_velocity[ species_index ][ i ] );
+        }
+    }
+
+    if ( params.collision_mode === 0 )
+    {
+        for ( let j = 0; j < species_profile.species_position[ prey_index ].length; ++j )
+        {
+            const prey_point = species_profile.species_position[ prey_index ][ j ];
+            let vanish_flag = false;
+
+            const neighbor_species = get_neighbor_points(species_index, prey_point);
+            for ( let i = 0; i < neighbor_species.length; ++i )
+            {
+                const species_point = species_profile.species_position[ species_index ][ neighbor_species[i] ];
+                const d_squared = distance_squared( species_point, prey_point );
+                if ( d_squared < collision_radius_squared )
+                {
+                    vanish_flag = true;
+                    break;
+                }
+            }
+            if ( vanish_flag )
+            {
+                new_species_position.push( prey_point );
+                new_species_velocity.push( species_profile.species_velocity[ prey_index ][ j ] );
+            }
+        }
+    }
+    return [ new_species_position, new_species_velocity ];
+}
+
 function get_species_collision_update( species_index )
 {
     const prey_index = params.prey_list[ species_index ];
@@ -686,7 +794,8 @@ function update_species_collision( )
     const new_species_velocity = [];
     for ( let i = 0; i < params.number_of_species; ++i )
     {
-        const update = get_species_collision_update( i );
+        const update = params.use_grid_index? get_species_collision_update_grid_index_version( i ):
+        get_species_collision_update(i);
         new_species_position.push( update[ 0 ] );
         new_species_velocity.push( update[ 1 ] );
     }
@@ -699,6 +808,7 @@ function next_step( )
     // add_random_noise();
 
     update_species_position();
+    if (params.use_grid_index) update_grid_index();
     update_species_collision();
 
     draw_points();

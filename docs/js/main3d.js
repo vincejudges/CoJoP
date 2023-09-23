@@ -8,6 +8,9 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
 
 // ------------ Common ------------
 const scene = new THREE.Scene();
@@ -19,6 +22,21 @@ const gui = new GUI();
 const grid_helper = new THREE.GridHelper( 4, 1 );
 const world_axis = new THREE.AxesHelper( 2.5 );
 // ------------ Common ------------
+
+// ------------ Controls ------------
+const controls_OC = new OrbitControls( camera, renderer.domElement );
+controls_OC.update();
+controls_OC.addEventListener( 'change', render );
+
+// TransformControls
+const controls_TC = new TransformControls( camera, renderer.domElement );
+controls_TC.addEventListener( 'change', render );
+controls_TC.addEventListener( 'dragging-changed', dragging_changed );
+function dragging_changed( event )
+{
+    controls_OC.enabled = ! event.value;
+}
+// ------------ Controls ------------
 
 
 // ------------ Species ------------
@@ -71,15 +89,16 @@ const params =
 {
     game_state: 0,
     dt: 0.02,
-    mass: 100,
-    drag_factor: 0.05,
+    mass: 40,
+    drag_factor: 0.02,
     velocity_magnitude_limit: 0.1,
     acceleration_magnitude_limit: 0.1,
-    visibility: 3,
+    visibility: 5,
     visibility_squared: null,
     texture_type_buffer: null,
     texture_type: 3,
-    initial_camera_height: 3,
+    initial_camera_position: [ 2.5, 2.5, 5 ],
+    reset_camera_position: null,
     number_of_species: 3,
     player_species_name: null,
     player_species_index: 0,
@@ -92,6 +111,7 @@ const params =
     collision_radius: 0.12,
     domain_x_length: 4,
     domain_y_length: 4,
+    domain_z_length: 4,
     species_initial_number: 60,
     use_grid_index: false,
 };
@@ -101,7 +121,8 @@ params.collision_mode_name = collision_mode_index_to_name_map[ params.collision_
 params.texture_type_buffer = params.texture_type;
 params.visibility_squared = params.visibility ** 2;
 params.grid_length = params.collision_radius * 10;
-change_initial_camera_height();
+params.reset_camera_position = params.initial_camera_position;
+change_reset_camera_position();
 // ------------ Parameters ------------
 
 // ------------ Auto Play ------------
@@ -250,7 +271,7 @@ const material_boundary_line = new LineMaterial(
 // ------------ Main Body ------------
 const buttons =
 {
-    change_to_3d: function( ) { window.location.href = './CoJoP3D.html'; },
+    change_to_2d: function( ) { window.location.href = 'index.html'; },
     start_with_random_position: start_with_random_position,
     change_game_state: change_game_state,
     camera_reset: camera_reset,
@@ -367,7 +388,7 @@ function initialization( )
     document.body.appendChild( stats.domElement );
 
     // Objects
-    // scene.add( world_axis );
+    scene.add( world_axis );
     // scene.add( grid_helper );
     scene.add( species_group );
 
@@ -378,7 +399,7 @@ function initialization( )
     // Actions
     window.addEventListener( 'resize', on_window_resize );
 
-    gui.add( buttons, 'change_to_3d' ).name( 'Change to 3D' );
+    gui.add( buttons, 'change_to_2d' ).name( 'Change to 2D' );
 
     const gui_parameter_control = gui.addFolder( 'Parameters' );
     gui_parameter_control.add( buttons, 'start_with_random_position' ).name( 'Initialize' );
@@ -426,6 +447,7 @@ function initialization( )
     gui_hyper_control.add( params, 'acceleration_magnitude_limit', 0.05, 0.5, 0.01 ).name( 'Acceleration Limit' ).listen();
     gui_hyper_control.add( params, 'domain_x_length', 0.2, 40 ).name( 'Domain x Length' ).listen().onChange( draw_boundary );
     gui_hyper_control.add( params, 'domain_y_length', 0.2, 40 ).name( 'Domain y Length' ).listen().onChange( draw_boundary );
+    gui_hyper_control.add( params, 'domain_z_length', 0.2, 40 ).name( 'Domain z Length' ).listen().onChange( draw_boundary );
 
     const gui_enhanced_control = gui.addFolder( 'Enhanced Control' ).close();
 
@@ -461,10 +483,17 @@ function add_points( vertices, species_type )
     return points;
 }
 
-function change_initial_camera_height( )
+function change_reset_camera_position( )
 {
-    if ( window.innerWidth < window.innerHeight ) params.initial_camera_height = Math.min( 7, 3 * window.innerHeight / window.innerWidth );
-    else params.initial_camera_height = 3;
+    if ( window.innerWidth < window.innerHeight )
+    {
+        const ratio = window.innerHeight / window.innerWidth;
+        params.reset_camera_position = [];
+        params.reset_camera_position.push( Math.min( 7, params.initial_camera_position[ 0 ] * ratio ) );
+        params.reset_camera_position.push( Math.min( 7, params.initial_camera_position[ 1 ] * ratio ) );
+        params.reset_camera_position.push( Math.min( 7, params.initial_camera_position[ 2 ] * ratio ) );
+    }
+    else params.reset_camera_position = params.initial_camera_position;
 }
 
 function on_window_resize( )
@@ -473,13 +502,13 @@ function on_window_resize( )
     camera.updateProjectionMatrix();
 
     renderer.setSize( window.innerWidth, window.innerHeight );
-    change_initial_camera_height();
-    camera_reset();
+    // change_reset_camera_position();
+    // camera_reset();
 }
 
 function camera_reset( )
 {
-    camera.position.set( 0, params.initial_camera_height, 0 );
+    camera.position.set( ...params.reset_camera_position );
     camera.lookAt( 0, 0, 0 );
 }
 
@@ -570,7 +599,25 @@ function draw_boundary( )
     const x_minimum = - x_maximum;
     const y_maximum = params.domain_y_length / 2;
     const y_minimum = - y_maximum;
-    const positions = [ ...[ x_minimum, 0, y_minimum ], ...[ x_minimum, 0, y_maximum ], ...[ x_maximum, 0, y_maximum ], ...[ x_maximum, 0, y_minimum ], ...[ x_minimum, 0, y_minimum ] ];
+    const z_maximum = params.domain_z_length / 2;
+    const z_minimum = - z_maximum;
+    const positions = [];
+    positions.push( ...[ x_minimum, z_minimum, y_minimum ] );
+    positions.push( ...[ x_maximum, z_minimum, y_minimum ] );
+    positions.push( ...[ x_maximum, z_minimum, y_maximum ] );
+    positions.push( ...[ x_minimum, z_minimum, y_maximum ] );
+    positions.push( ...[ x_minimum, z_minimum, y_minimum ] );
+    positions.push( ...[ x_minimum, z_maximum, y_minimum ] );
+    positions.push( ...[ x_maximum, z_maximum, y_minimum ] );
+    positions.push( ...[ x_maximum, z_minimum, y_minimum ] );
+    positions.push( ...[ x_maximum, z_minimum, y_maximum ] );
+    positions.push( ...[ x_maximum, z_maximum, y_maximum ] );
+    positions.push( ...[ x_maximum, z_maximum, y_minimum ] );
+    positions.push( ...[ x_minimum, z_maximum, y_minimum ] );
+    positions.push( ...[ x_minimum, z_maximum, y_maximum ] );
+    positions.push( ...[ x_minimum, z_minimum, y_maximum ] );
+    positions.push( ...[ x_minimum, z_maximum, y_maximum ] );
+    positions.push( ...[ x_maximum, z_maximum, y_maximum ] );
     const geometry_boundary = new LineGeometry();
     geometry_boundary.setPositions( positions );
     const boundary = new Line2( geometry_boundary, material_boundary_line );
@@ -590,9 +637,10 @@ function start_with_random_position( )
     params.strategy_list = [];
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
     const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    const z_range = [ - params.domain_z_length / 2, params.domain_z_length / 2 ];
     for ( let i = 0; i < params.number_of_species; ++i )
     {
-        const position = get_random_2d_points( params.species_initial_number, x_range, y_range );
+        const position = get_random_3d_points( params.species_initial_number, x_range, y_range, z_range );
         const velocity = [];
         for ( let j = 0; j < params.species_initial_number; ++j ) velocity.push( [ 0, 0, 0 ] );
         species_profile.species_position.push( position );
@@ -610,15 +658,18 @@ function add_random_noise( sigma = 0.002 )
 {
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
     const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    const z_range = [ - params.domain_z_length / 2, params.domain_z_length / 2 ];
     for ( let i = 0; i < species_profile.species_position.length; ++i )
     {
         for ( let j = 0; j < species_profile.species_position[ i ].length; ++j )
         {
-            const noise = [ random_Gaussian( 0, sigma ), 0, random_Gaussian( 0, sigma ) ];
+            const noise = [ random_Gaussian( 0, sigma ), random_Gaussian( 0, sigma ), random_Gaussian( 0, sigma ) ];
             species_profile.species_position[ i ][ j ][ 0 ] += noise[ 0 ];
+            species_profile.species_position[ i ][ j ][ 1 ] += noise[ 1 ];
             species_profile.species_position[ i ][ j ][ 2 ] += noise[ 2 ];
             // periodic boundary condition
             species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
+            species_profile.species_position[ i ][ j ][ 1 ] = ( ( species_profile.species_position[ i ][ j ][ 1 ] - z_range[ 0 ] ) % params.domain_z_length + params.domain_z_length ) % params.domain_z_length + z_range[ 0 ];
             species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
         }
     }
@@ -626,13 +677,16 @@ function add_random_noise( sigma = 0.002 )
 
 function distance_squared( point_1, point_2 )
 {
-    return ( point_1[ 0 ] - point_2[ 0 ] ) ** 2 + ( point_1[ 2 ] - point_2[ 2 ] ) ** 2;
+    let result = 0;
+    for ( let i = 0; i < point_1.length; ++i ) result += ( point_1[ i ] - point_2[ i ] ) ** 2;
+    return result;
 }
 
 function get_acceleration_vector( center_point, another_point_origin )
 {
     let dx = 0;
     let dy = 0;
+    let dz = 0;
     let another_point = another_point_origin;
     let d_squared = distance_squared( center_point, another_point_origin );
 
@@ -640,13 +694,16 @@ function get_acceleration_vector( center_point, another_point_origin )
     {
         for ( let j = - 1; j <= 1; ++j )
         {
-            if ( i === 0 && j === 0 ) continue;
-            const another_point_reflected = [ another_point_origin[ 0 ] + i * params.domain_x_length, 0, another_point_origin[ 2 ] + j * params.domain_y_length ];
-            const d_squared_relected = distance_squared( center_point, another_point_reflected );
-            if ( d_squared_relected < d_squared )
+            for ( let k = - 1; k <= 1; ++k )
             {
-                d_squared = d_squared_relected;
-                another_point = another_point_reflected;
+                if ( i === 0 && j === 0 && k === 0 ) continue;
+                const another_point_reflected = [ another_point_origin[ 0 ] + i * params.domain_x_length, another_point_origin[ 1 ] + k * params.domain_z_length, another_point_origin[ 2 ] + j * params.domain_y_length ];
+                const d_squared_relected = distance_squared( center_point, another_point_reflected );
+                if ( d_squared_relected < d_squared )
+                {
+                    d_squared = d_squared_relected;
+                    another_point = another_point_reflected;
+                }
             }
         }
     }
@@ -654,9 +711,10 @@ function get_acceleration_vector( center_point, another_point_origin )
     {
         const d = Math.sqrt( d_squared );
         dx = ( another_point[ 0 ] - center_point[ 0 ] ) / ( d * d_squared );
+        dz = ( another_point[ 1 ] - center_point[ 1 ] ) / ( d * d_squared );
         dy = ( another_point[ 2 ] - center_point[ 2 ] ) / ( d * d_squared );
     }
-    return [ dx, 0, dy ];
+    return [ dx, dz, dy ];
 }
 
 function get_velocity_update( species_index )
@@ -674,8 +732,10 @@ function get_velocity_update( species_index )
         const species_point = species_profile.species_position[ species_index ][ i ];
         let chase_dx = 0;
         let chase_dy = 0;
+        let chase_dz = 0;
         let escape_dx = 0;
         let escape_dy = 0;
+        let escape_dz = 0;
 
         for ( let j = 0; j < species_profile.species_position[ prey_index ].length; ++j )
         {
@@ -683,9 +743,11 @@ function get_velocity_update( species_index )
             const update_vector = get_acceleration_vector( species_point, prey_point_origin );
             chase_dx += update_vector[ 0 ];
             chase_dy += update_vector[ 2 ];
+            chase_dz += update_vector[ 1 ];
         }
         chase_dx *= chase_factor / params.mass;
         chase_dy *= chase_factor / params.mass;
+        chase_dz *= chase_factor / params.mass;
 
         for ( let j = 0; j < species_profile.species_position[ predator_index ].length; ++j )
         {
@@ -693,20 +755,24 @@ function get_velocity_update( species_index )
             const update_vector = get_acceleration_vector( species_point, predator_point_origin );
             escape_dx += update_vector[ 0 ];
             escape_dy += update_vector[ 2 ];
+            escape_dz += update_vector[ 1 ];
         }
         escape_dx *= escape_factor / params.mass;
         escape_dy *= escape_factor / params.mass;
+        escape_dz *= escape_factor / params.mass;
 
         let dx = chase_dx - escape_dx;
         let dy = chase_dy - escape_dy;
-        const a_squared = dx ** 2 + dy ** 2;
+        let dz = chase_dz - escape_dz;
+        const a_squared = dx ** 2 + dy ** 2 + dz ** 2;
         if ( a_squared > acceleration_limit_squared )
         {
             const a = Math.sqrt( a_squared );
             dx *= acceleration_limit / a;
             dy *= acceleration_limit / a;
+            dz *= acceleration_limit / a;
         }
-        acceleration_times_dt.push( [ dx * params.dt, 0, dy * params.dt ] );
+        acceleration_times_dt.push( [ dx * params.dt, dz * params.dt, dy * params.dt ] );
     }
 
     return acceleration_times_dt;
@@ -771,6 +837,7 @@ function update_species_position( )
 {
     const x_range = [ - params.domain_x_length / 2, params.domain_x_length / 2 ];
     const y_range = [ - params.domain_y_length / 2, params.domain_y_length / 2 ];
+    const z_range = [ - params.domain_z_length / 2, params.domain_z_length / 2 ];
     const velocity_limit = params.velocity_magnitude_limit / params.dt;
     const velocity_limit_squared = velocity_limit ** 2;
     for ( let i = 0; i < params.number_of_species; ++i )
@@ -780,23 +847,28 @@ function update_species_position( )
         {
             // resistance: point tends to become stationary
             species_profile.species_velocity[ i ][ j ][ 0 ] *= 1 - params.drag_factor;
+            species_profile.species_velocity[ i ][ j ][ 1 ] *= 1 - params.drag_factor;
             species_profile.species_velocity[ i ][ j ][ 2 ] *= 1 - params.drag_factor;
             // velocity is changed according to the force
             species_profile.species_velocity[ i ][ j ][ 0 ] += velocity_update[ j ][ 0 ];
+            species_profile.species_velocity[ i ][ j ][ 1 ] += velocity_update[ j ][ 1 ];
             species_profile.species_velocity[ i ][ j ][ 2 ] += velocity_update[ j ][ 2 ];
             // velocity has a bound
-            const v_squared = species_profile.species_velocity[ i ][ j ][ 0 ] ** 2 + species_profile.species_velocity[ i ][ j ][ 2 ] ** 2;
+            const v_squared = species_profile.species_velocity[ i ][ j ][ 0 ] ** 2 + species_profile.species_velocity[ i ][ j ][ 1 ] ** 2 + species_profile.species_velocity[ i ][ j ][ 2 ] ** 2;
             if ( v_squared > velocity_limit_squared )
             {
                 const v = Math.sqrt( v_squared );
                 species_profile.species_velocity[ i ][ j ][ 0 ] *= velocity_limit / v;
+                species_profile.species_velocity[ i ][ j ][ 1 ] *= velocity_limit / v;
                 species_profile.species_velocity[ i ][ j ][ 2 ] *= velocity_limit / v;
             }
             // position is changed according to the velocity
             species_profile.species_position[ i ][ j ][ 0 ] += species_profile.species_velocity[ i ][ j ][ 0 ] * params.dt;
+            species_profile.species_position[ i ][ j ][ 1 ] += species_profile.species_velocity[ i ][ j ][ 1 ] * params.dt;
             species_profile.species_position[ i ][ j ][ 2 ] += species_profile.species_velocity[ i ][ j ][ 2 ] * params.dt;
             // periodic boundary condition
             species_profile.species_position[ i ][ j ][ 0 ] = ( ( species_profile.species_position[ i ][ j ][ 0 ] - x_range[ 0 ] ) % params.domain_x_length + params.domain_x_length ) % params.domain_x_length + x_range[ 0 ];
+            species_profile.species_position[ i ][ j ][ 1 ] = ( ( species_profile.species_position[ i ][ j ][ 1 ] - z_range[ 0 ] ) % params.domain_z_length + params.domain_z_length ) % params.domain_z_length + z_range[ 0 ];
             species_profile.species_position[ i ][ j ][ 2 ] = ( ( species_profile.species_position[ i ][ j ][ 2 ] - y_range[ 0 ] ) % params.domain_y_length + params.domain_y_length ) % params.domain_y_length + y_range[ 0 ];
         }
     }

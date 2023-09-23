@@ -47,3 +47,20 @@ function get_random_2d_points( number_of_points, x_range, y_range )
     }
     return points;
 }
+
+function get_random_3d_points( number_of_points, x_range, y_range, z_range )
+{
+    const points = [];
+    const x_length = x_range[ 1 ] - x_range[ 0 ];
+    const y_length = y_range[ 1 ] - y_range[ 0 ];
+    const z_length = z_range[ 1 ] - z_range[ 0 ];
+
+    for ( let i = 0; i < number_of_points; ++i )
+    {
+        const x = Math.random() * x_length + x_range[ 0 ];
+        const y = Math.random() * y_length + y_range[ 0 ];
+        const z = Math.random() * z_length + z_range[ 0 ];
+        points.push( [ x, z, y ] );
+    }
+    return points;
+}

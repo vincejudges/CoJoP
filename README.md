@@ -13,3 +13,7 @@ Visulization of three species interacting in a predation scenario.
 https://en.wikipedia.org/wiki/Rock_paper_scissors
 
 https://emojipedia.org
+
+https://cnc.fandom.com/wiki/Category:Red_Alert_2_Allied_arsenal
+
+https://cnc.fandom.com/wiki/Category:Red_Alert_2_Soviet_arsenal

@@ -642,10 +642,10 @@ function get_acceleration_vector( center_point, another_point_origin )
         {
             if ( i === 0 && j === 0 ) continue;
             const another_point_reflected = [ another_point_origin[ 0 ] + i * params.domain_x_length, 0, another_point_origin[ 2 ] + j * params.domain_y_length ];
-            const d_squared_relected = distance_squared( center_point, another_point_reflected );
-            if ( d_squared_relected < d_squared )
+            const d_squared_reflected = distance_squared( center_point, another_point_reflected );
+            if ( d_squared_reflected < d_squared )
             {
-                d_squared = d_squared_relected;
+                d_squared = d_squared_reflected;
                 another_point = another_point_reflected;
             }
         }

@@ -684,8 +684,8 @@ function get_velocity_update( species_index )
             chase_dx += update_vector[ 0 ];
             chase_dy += update_vector[ 2 ];
         }
-        chase_dx *= chase_factor / params.mass;
-        chase_dy *= chase_factor / params.mass;
+        chase_dx *= chase_factor * params.mass;
+        chase_dy *= chase_factor * params.mass;
 
         for ( let j = 0; j < species_profile.species_position[ predator_index ].length; ++j )
         {
@@ -694,8 +694,8 @@ function get_velocity_update( species_index )
             escape_dx += update_vector[ 0 ];
             escape_dy += update_vector[ 2 ];
         }
-        escape_dx *= escape_factor / params.mass;
-        escape_dy *= escape_factor / params.mass;
+        escape_dx *= escape_factor * params.mass;
+        escape_dy *= escape_factor * params.mass;
 
         let dx = chase_dx - escape_dx;
         let dy = chase_dy - escape_dy;
@@ -738,8 +738,8 @@ function get_velocity_update_grid_index( species_index )
             chase_dx += update_vector[ 0 ];
             chase_dy += update_vector[ 2 ];
         }
-        chase_dx *= chase_factor / params.mass;
-        chase_dy *= chase_factor / params.mass;
+        chase_dx *= chase_factor * params.mass;
+        chase_dy *= chase_factor * params.mass;
 
         const predators = get_points_within_radius( predator_index, species_point, params.visibility );
         for ( let j = 0; j < predators.length; ++j )
@@ -749,8 +749,8 @@ function get_velocity_update_grid_index( species_index )
             escape_dx += update_vector[ 0 ];
             escape_dy += update_vector[ 2 ];
         }
-        escape_dx *= escape_factor / params.mass;
-        escape_dy *= escape_factor / params.mass;
+        escape_dx *= escape_factor * params.mass;
+        escape_dy *= escape_factor * params.mass;
 
         let dx = chase_dx - escape_dx;
         let dy = chase_dy - escape_dy;

@@ -89,10 +89,10 @@ const params =
 {
     game_state: 0,
     dt: 0.02,
-    mass: 40,
+    mass: 100,
     drag_factor: 0.02,
     velocity_magnitude_limit: 0.1,
-    acceleration_magnitude_limit: 0.1,
+    acceleration_magnitude_limit: 0.05,
     visibility: 5,
     visibility_squared: null,
     texture_type_buffer: null,
@@ -745,9 +745,9 @@ function get_velocity_update( species_index )
             chase_dy += update_vector[ 2 ];
             chase_dz += update_vector[ 1 ];
         }
-        chase_dx *= chase_factor / params.mass;
-        chase_dy *= chase_factor / params.mass;
-        chase_dz *= chase_factor / params.mass;
+        chase_dx *= chase_factor * params.mass;
+        chase_dy *= chase_factor * params.mass;
+        chase_dz *= chase_factor * params.mass;
 
         for ( let j = 0; j < species_profile.species_position[ predator_index ].length; ++j )
         {
@@ -757,9 +757,9 @@ function get_velocity_update( species_index )
             escape_dy += update_vector[ 2 ];
             escape_dz += update_vector[ 1 ];
         }
-        escape_dx *= escape_factor / params.mass;
-        escape_dy *= escape_factor / params.mass;
-        escape_dz *= escape_factor / params.mass;
+        escape_dx *= escape_factor * params.mass;
+        escape_dy *= escape_factor * params.mass;
+        escape_dz *= escape_factor * params.mass;
 
         let dx = chase_dx - escape_dx;
         let dy = chase_dy - escape_dy;
@@ -804,8 +804,8 @@ function get_velocity_update_grid_index( species_index )
             chase_dx += update_vector[ 0 ];
             chase_dy += update_vector[ 2 ];
         }
-        chase_dx *= chase_factor / params.mass;
-        chase_dy *= chase_factor / params.mass;
+        chase_dx *= chase_factor * params.mass;
+        chase_dy *= chase_factor * params.mass;
 
         const predators = get_points_within_radius( predator_index, species_point, params.visibility );
         for ( let j = 0; j < predators.length; ++j )
@@ -815,8 +815,8 @@ function get_velocity_update_grid_index( species_index )
             escape_dx += update_vector[ 0 ];
             escape_dy += update_vector[ 2 ];
         }
-        escape_dx *= escape_factor / params.mass;
-        escape_dy *= escape_factor / params.mass;
+        escape_dx *= escape_factor * params.mass;
+        escape_dy *= escape_factor * params.mass;
 
         let dx = chase_dx - escape_dx;
         let dy = chase_dy - escape_dy;

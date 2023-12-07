@@ -417,7 +417,7 @@ function initialization( )
             params.collision_mode = collision_mode_name_to_index_map[ value ];
         }
     );
-    gui_hyper_control.add( params, 'texture_type_buffer', - 1, 3, 1 ).name( 'Texture Type' ).listen().onChange( change_texture_type );
+    gui_hyper_control.add( params, 'texture_type_buffer', 0, 3, 1 ).name( 'Texture Type' ).listen().onChange( change_texture_type );
     gui_hyper_control.add( params, 'species_initial_number', 30, 5000, 10 ).name( 'Species Init #' ).listen();
     gui_hyper_control.add( params, 'mass', 10, 500, 10 ).name( 'Mass' ).listen();
     gui_hyper_control.add( params, 'drag_factor', 0.01, 0.50, 0.01 ).name( 'Drag Factor' ).listen();
